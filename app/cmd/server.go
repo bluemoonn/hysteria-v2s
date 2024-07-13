@@ -785,12 +785,12 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 		hyConfig.TrafficLogger = tss
 		// 添加定时更新用户使用流量协程
 		if c.V2RaySocks != nil && c.V2RaySocks.ApiHost != "" {
-			go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*90, hyConfig.TrafficLogger)
+			go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60, hyConfig.TrafficLogger)
 			go hyConfig.TrafficLogger.PushTrafficToV2RaySocksInterval(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=submit", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*180)
 		}
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
 	} else {
-		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*90, nil)
+		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*5, nil)
 	}
 	return nil
 }
