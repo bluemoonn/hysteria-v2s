@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -54,6 +55,7 @@ func init() {
 }
 
 type serverConfig struct {
+	V2RaySocks            *v2raysocksConfig           `mapstructure:"v2raysocks"`
 	Listen                string                      `mapstructure:"listen"`
 	Obfs                  serverConfigObfs            `mapstructure:"obfs"`
 	TLS                   *serverConfigTLS            `mapstructure:"tls"`
@@ -71,6 +73,12 @@ type serverConfig struct {
 	Outbounds             []serverConfigOutboundEntry `mapstructure:"outbounds"`
 	TrafficStats          serverConfigTrafficStats    `mapstructure:"trafficStats"`
 	Masquerade            serverConfigMasquerade      `mapstructure:"masquerade"`
+}
+
+type v2raysocksConfig struct {
+	ApiHost string `mapstructure:"apiHost"`
+	ApiKey  string `mapstructure:"apiKey"`
+	NodeID  uint   `mapstructure:"nodeID"`
 }
 
 type serverConfigObfsSalamander struct {
@@ -749,6 +757,18 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 		}
 		hyConfig.Authenticator = &auth.CommandAuthenticator{Cmd: c.Auth.Command}
 		return nil
+	case "v2raysocks":
+		// 定时获取用户列表并储存
+		// 判断URL是否存在
+		v2raysocksConfig := c.V2RaySocks
+		if v2raysocksConfig.ApiHost == "" || v2raysocksConfig.ApiKey == "" || v2raysocksConfig.NodeID == 0 {
+			return configError{Field: "auth.v2raysocks", Err: errors.New("v2raysocks config error")}
+		}
+		// 创建定时更新用户UUID协程
+		hyConfig.Authenticator = &auth.V2RaySocksApiProvider{URL: fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID)}
+
+		return nil
+
 	default:
 		return configError{Field: "auth.type", Err: errors.New("unsupported auth type")}
 	}
@@ -763,7 +783,14 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 	if c.TrafficStats.Listen != "" {
 		tss := trafficlogger.NewTrafficStatsServer(c.TrafficStats.Secret)
 		hyConfig.TrafficLogger = tss
+		// 添加定时更新用户使用流量协程
+		if c.V2RaySocks != nil && c.V2RaySocks.ApiHost != "" {
+			go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*90, hyConfig.TrafficLogger)
+			go hyConfig.TrafficLogger.PushTrafficToV2RaySocksInterval(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=submit", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*180)
+		}
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
+	} else {
+		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*90, nil)
 	}
 	return nil
 }
@@ -875,6 +902,19 @@ func (c *serverConfig) Config() (*server.Config, error) {
 	return hyConfig, nil
 }
 
+type ResponseNodeInfo struct {
+	Host       string `json:"host"`
+	ServerPort uint   `json:"server_port"`
+	ServerName string `json:"server_name"`
+	UpMbps     uint   `json:"down_mbps"`
+	DownMbps   uint   `json:"up_mbps"`
+	Obfs       string `json:"obfs"`
+	BaseConfig struct {
+		PushInterval int `json:"push_interval"`
+		PullInterval int `json:"pull_interval"`
+	} `json:"base_config"`
+}
+
 func runServer(cmd *cobra.Command, args []string) {
 	logger.Info("server mode")
 
@@ -884,6 +924,53 @@ func runServer(cmd *cobra.Command, args []string) {
 	var config serverConfig
 	if err := viper.Unmarshal(&config); err != nil {
 		logger.Fatal("failed to parse server config", zap.Error(err))
+	}
+	// 如果配置了v2raysocks 则自动获取监听端口、obfs
+	if config.V2RaySocks != nil && config.V2RaySocks.ApiHost != "" {
+		// 创建一个url.Values来存储查询参数
+		queryParams := url.Values{}
+		queryParams.Add("act", "config")
+		queryParams.Add("token", config.V2RaySocks.ApiKey)
+		queryParams.Add("node_id", strconv.Itoa(int(config.V2RaySocks.NodeID)))
+		queryParams.Add("nodetype", "hysteria2")
+
+		// 创建完整的URL，包括查询参数
+		nodeInfoUrl := config.V2RaySocks.ApiHost + "?" + queryParams.Encode()
+
+		// 发起 HTTP GET 请求
+		resp, err := http.Get(nodeInfoUrl)
+		if err != nil {
+			// 处理错误
+			fmt.Println("HTTP GET 请求节点配置出错:", err)
+			logger.Fatal("failed to client v2raysocks api to get nodeInfo", zap.Error(err))
+		}
+		defer resp.Body.Close()
+		// 读取响应数据
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Fatal("failed to read v2raysocks reaponse", zap.Error(err))
+		}
+		// 解析JSON数据
+		var responseNodeInfo ResponseNodeInfo
+		err = json.Unmarshal(body, &responseNodeInfo)
+		if err != nil {
+			logger.Fatal("failed to unmarshal v2raysocks reaponse", zap.Error(err))
+		}
+		// 给 hy的端口、obfs、上行下行进行赋值
+		if responseNodeInfo.ServerPort != 0 {
+			config.Listen = ":" + strconv.Itoa(int(responseNodeInfo.ServerPort))
+		}
+		if responseNodeInfo.DownMbps != 0 {
+			config.Bandwidth.Down = strconv.Itoa(int(responseNodeInfo.DownMbps)) + "Mbps"
+		}
+		if responseNodeInfo.UpMbps != 0 {
+			config.Bandwidth.Up = strconv.Itoa(int(responseNodeInfo.UpMbps)) + "Mbps"
+		}
+		if responseNodeInfo.Obfs != "" {
+			config.Obfs.Type = "salamander"
+			config.Obfs.Salamander.Password = responseNodeInfo.Obfs
+		}
+
 	}
 	hyConfig, err := config.Config()
 	if err != nil {

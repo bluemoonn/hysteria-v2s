@@ -1,10 +1,14 @@
 package trafficlogger
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/apernet/hysteria/core/v2/server"
 )
@@ -27,6 +31,81 @@ func NewTrafficStatsServer(secret string) TrafficStatsServer {
 		OnlineMap: make(map[string]int),
 		Secret:    secret,
 	}
+}
+
+type TrafficPushEntry struct {
+	UserID int64 `json:"user_id"`
+	U      int64 `json:"u"`
+	D      int64 `json:"d"`
+}
+
+type TrafficPushRequest struct {
+	Data []TrafficPushEntry `json:"data"`
+}
+
+// 定时提交用户流量情况
+func (s *trafficStatsServerImpl) PushTrafficToV2RaySocksInterval(url string, interval time.Duration) {
+	fmt.Println("用户流量情况监控已启动")
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := s.PushTrafficToV2RaySocks(url); err != nil {
+			fmt.Println("用户流量信息提交失败:", err)
+		}
+	}
+
+}
+
+// 向v2raysocks 提交用户流量使用情况
+func (s *trafficStatsServerImpl) PushTrafficToV2RaySocks(url string) error {
+	s.Mutex.Lock()         // 写锁，阻止其他操作 StatsMap 的并发访问
+	defer s.Mutex.Unlock() // 确保在函数退出时释放写锁
+
+	// 创建一个请求对象并填充数据
+	request := TrafficPushRequest{
+		Data: []TrafficPushEntry{},
+	}
+	for id, stats := range s.StatsMap {
+		userID, err := strconv.ParseInt(id, 10, 64) // 假设 id 是字符串类型，需要转换为 int64
+		if err != nil {
+			return err
+		}
+		request.Data = append(request.Data, TrafficPushEntry{
+			UserID: userID,
+			U:      int64(stats.Tx),
+			D:      int64(stats.Rx),
+		})
+	}
+	// 如果不存在数据则跳过
+	if len(request.Data) == 0 {
+		return nil
+	}
+
+	// 将请求对象转换为 JSON
+	jsonData, err := json.Marshal(request.Data)
+	if err != nil {
+		return err
+	}
+
+	// 发起 HTTP 请求并提交数据
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Println(resp)
+		return err
+	}
+	defer resp.Body.Close()
+
+	// 检查 HTTP 响应状态，处理错误等
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("HTTP request failed with status code: " + resp.Status)
+	}
+
+	// 清空流量记录
+	s.StatsMap = make(map[string]*trafficStatsEntry)
+
+	return nil
 }
 
 type trafficStatsServerImpl struct {
@@ -151,4 +230,12 @@ func (s *trafficStatsServerImpl) kick(w http.ResponseWriter, r *http.Request) {
 	s.Mutex.Unlock()
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// 踢出用户名单
+func (s *trafficStatsServerImpl) NewKick(id string) bool {
+	s.Mutex.Lock()
+	s.KickMap[id] = struct{}{}
+	s.Mutex.Unlock()
+	return true
 }
