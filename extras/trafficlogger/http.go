@@ -10,6 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/host"
+	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/apernet/hysteria/core/v2/server"
 )
 
@@ -22,15 +26,21 @@ const (
 type TrafficStatsServer interface {
 	server.TrafficLogger
 	http.Handler
+	PushSystemStatusInterval(url string, interval time.Duration)
 }
 
-func NewTrafficStatsServer(secret string) TrafficStatsServer {
-	return &trafficStatsServerImpl{
-		StatsMap:  make(map[string]*trafficStatsEntry),
-		KickMap:   make(map[string]struct{}),
-		OnlineMap: make(map[string]int),
-		Secret:    secret,
-	}
+// trafficStatsServerImpl 用于管理系统状态提交的结构体
+type trafficStatsServerImpl struct {
+	Mutex     sync.RWMutex
+	StatsMap  map[string]*trafficStatsEntry
+	OnlineMap map[string]int
+	KickMap   map[string]struct{}
+	Secret    string
+}
+
+type trafficStatsEntry struct {
+	Tx uint64 `json:"tx"`
+	Rx uint64 `json:"rx"`
 }
 
 type TrafficPushEntry struct {
@@ -43,7 +53,116 @@ type TrafficPushRequest struct {
 	Data []TrafficPushEntry `json:"data"`
 }
 
-// 定时提交用户流量情况
+// SystemStatus 用于表示系统状态
+type SystemStatus struct {
+	Cpu    string `json:"cpu"`
+	Mem    string `json:"mem"`
+	Disk   string `json:"disk"`
+	Uptime uint64 `json:"uptime"`
+}
+
+func NewTrafficStatsServer(secret string) TrafficStatsServer {
+	return &trafficStatsServerImpl{
+		StatsMap:  make(map[string]*trafficStatsEntry),
+		KickMap:   make(map[string]struct{}),
+		OnlineMap: make(map[string]int),
+		Secret:    secret,
+	}
+}
+
+// GetSystemInfo 获取系统状态信息
+func GetSystemInfo() (Cpu string, Mem string, Disk string, Uptime uint64, err error) {
+	errorString := ""
+
+	cpuPercent, err := cpu.Percent(0, false)
+	if len(cpuPercent) > 0 && err == nil {
+		Cpu = fmt.Sprintf("%.0f%%", cpuPercent[0])
+	} else {
+		Cpu = "0%"
+		errorString += fmt.Sprintf("获取CPU使用率失败: %s ", err)
+	}
+
+	memUsage, err := mem.VirtualMemory()
+	if err != nil {
+		errorString += fmt.Sprintf("获取内存使用率失败: %s ", err)
+	} else {
+		Mem = fmt.Sprintf("%.0f%%", memUsage.UsedPercent)
+	}
+
+	diskUsage, err := disk.Usage("/")
+	if err != nil {
+		errorString += fmt.Sprintf("获取磁盘使用率失败: %s ", err)
+	} else {
+		Disk = fmt.Sprintf("%.0f%%", diskUsage.UsedPercent)
+	}
+
+	uptime, err := host.Uptime()
+	if err != nil {
+		errorString += fmt.Sprintf("获取系统运行时间失败: %s ", err)
+	} else {
+		Uptime = uptime
+	}
+
+	if errorString != "" {
+		err = fmt.Errorf(errorString)
+	}
+
+	return Cpu, Mem, Disk, Uptime, err
+}
+
+// PushSystemStatusInterval 定期提交系统状态
+func (s *trafficStatsServerImpl) PushSystemStatusInterval(url string, interval time.Duration) {
+	fmt.Println("系统状态监控已启动")
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := s.PushSystemStatus(url); err != nil {
+			fmt.Println("系统状态信息提交失败:", err)
+		}
+	}
+}
+
+// PushSystemStatus 向指定的URL提交系统状态信息
+func (s *trafficStatsServerImpl) PushSystemStatus(url string) error {
+	s.Mutex.Lock()         // 写锁，阻止其他操作的并发访问
+	defer s.Mutex.Unlock() // 确保在函数退出时释放写锁
+
+	cpu, mem, disk, uptime, err := GetSystemInfo()
+	if err != nil {
+		return err
+	}
+
+	status := SystemStatus{
+		Cpu:    cpu,
+		Mem:    mem,
+		Disk:   disk,
+		Uptime: uptime,
+	}
+
+	// 将请求对象转换为 JSON
+	jsonData, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+
+	// 发起 HTTP 请求并提交数据
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// 检查 HTTP 响应状态，处理错误等
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("HTTP请求失败，状态码: " + resp.Status)
+	}
+
+	return nil
+}
+
+// PushTrafficToV2RaySocksInterval 定时提交用户流量情况
 func (s *trafficStatsServerImpl) PushTrafficToV2RaySocksInterval(url string, interval time.Duration) {
 	fmt.Println("用户流量情况监控已启动")
 
@@ -55,10 +174,9 @@ func (s *trafficStatsServerImpl) PushTrafficToV2RaySocksInterval(url string, int
 			fmt.Println("用户流量信息提交失败:", err)
 		}
 	}
-
 }
 
-// 向v2raysocks 提交用户流量使用情况
+// PushTrafficToV2RaySocks 向v2raysocks 提交用户流量使用情况
 func (s *trafficStatsServerImpl) PushTrafficToV2RaySocks(url string) error {
 	s.Mutex.Lock()         // 写锁，阻止其他操作 StatsMap 的并发访问
 	defer s.Mutex.Unlock() // 确保在函数退出时释放写锁
@@ -106,19 +224,6 @@ func (s *trafficStatsServerImpl) PushTrafficToV2RaySocks(url string) error {
 	s.StatsMap = make(map[string]*trafficStatsEntry)
 
 	return nil
-}
-
-type trafficStatsServerImpl struct {
-	Mutex     sync.RWMutex
-	StatsMap  map[string]*trafficStatsEntry
-	OnlineMap map[string]int
-	KickMap   map[string]struct{}
-	Secret    string
-}
-
-type trafficStatsEntry struct {
-	Tx uint64 `json:"tx"`
-	Rx uint64 `json:"rx"`
 }
 
 func (s *trafficStatsServerImpl) LogTraffic(id string, tx, rx uint64) (ok bool) {
@@ -239,3 +344,6 @@ func (s *trafficStatsServerImpl) NewKick(id string) bool {
 	s.Mutex.Unlock()
 	return true
 }
+
+// 确保 trafficStatsServerImpl 实现了 TrafficStatsServer 接口
+var _ TrafficStatsServer = &trafficStatsServerImpl{}

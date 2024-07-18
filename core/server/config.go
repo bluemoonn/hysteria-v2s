@@ -212,5 +212,6 @@ type EventLogger interface {
 type TrafficLogger interface {
 	LogTraffic(id string, tx, rx uint64) (ok bool)
 	PushTrafficToV2RaySocksInterval(url string, interval time.Duration)
+	PushSystemStatusInterval(url string, interval time.Duration)
 	LogOnlineState(id string, online bool)
 }
