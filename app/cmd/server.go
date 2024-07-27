@@ -765,7 +765,7 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 			return configError{Field: "auth.v2raysocks", Err: errors.New("v2raysocks config error")}
 		}
 		// 创建定时更新用户UUID协程
-		hyConfig.Authenticator = &auth.V2RaySocksApiProvider{URL: fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID)}
+		hyConfig.Authenticator = &auth.V2RaySocksApiProvider{URL: fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID)}
 
 		return nil
 
@@ -785,13 +785,13 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 		hyConfig.TrafficLogger = tss
 		// 添加定时更新用户使用流量协程
 		if c.V2RaySocks != nil && c.V2RaySocks.ApiHost != "" {
-			go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60, hyConfig.TrafficLogger)
-			go hyConfig.TrafficLogger.PushTrafficToV2RaySocksInterval(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=submit", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60)
-			go hyConfig.TrafficLogger.PushSystemStatusInterval(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=nodestatus", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60)
+			go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60, hyConfig.TrafficLogger)
+			go hyConfig.TrafficLogger.PushTrafficToV2RaySocksInterval(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=submit", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60)
+			go hyConfig.TrafficLogger.PushSystemStatusInterval(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=nodestatus", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60)
 		}
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
 	} else {
-		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&nodetype=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*5, nil)
+		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*5, nil)
 	}
 	return nil
 }
@@ -933,7 +933,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		queryParams.Add("act", "config")
 		queryParams.Add("token", config.V2RaySocks.ApiKey)
 		queryParams.Add("node_id", strconv.Itoa(int(config.V2RaySocks.NodeID)))
-		queryParams.Add("nodetype", "hysteria2")
+		queryParams.Add("node_type", "hysteria2")
 
 		// 创建完整的URL，包括查询参数
 		nodeInfoUrl := config.V2RaySocks.ApiHost + "?" + queryParams.Encode()
