@@ -17,7 +17,7 @@ var _ server.Authenticator = &V2RaySocksApiProvider{}
 type V2RaySocksApiProvider struct {
 	Client *http.Client
 	URL    string
-	Etag   string        // 添加一个字段用于存储服务器返回的ETag
+	Etag   string // 添加一个字段用于存储服务器返回的ETag
 }
 
 // 用户列表
@@ -27,14 +27,10 @@ var (
 )
 
 type User struct {
-	ID          int         `json:"id"`
-	HysteriaUser HysteriaUser `json:"hysteria_user"`
-}
-
-type HysteriaUser struct {
-	UUID       string `json:"uuid"`
-	DeviceLimit int    `json:"device_limit"`
-	SpeedLimit  int    `json:"speed_limit"`
+	ID          int    `json:"id"`
+	UUID        string `json:"uuid"`
+	DeviceLimit int    `json:"dt"`
+	SpeedLimit  int    `json:"st"`
 }
 
 type ResponseData struct {
@@ -92,7 +88,7 @@ func UpdateUsers(url string, interval time.Duration, trafficlogger server.Traffi
 			lock.Lock()
 			newUsersMap := make(map[string]User)
 			for _, user := range userList {
-				newUsersMap[user.HysteriaUser.UUID] = user
+				newUsersMap[user.UUID] = user
 			}
 			if trafficlogger != nil {
 				for uuid := range usersMap {

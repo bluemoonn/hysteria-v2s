@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apernet/hysteria/core/v2/server"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/apernet/hysteria/core/v2/server"
 )
 
 const (
@@ -44,7 +44,7 @@ type trafficStatsEntry struct {
 }
 
 type TrafficPushEntry struct {
-	UserID int64 `json:"user_id"`
+	UserID int64 `json:"uid"`
 	U      int64 `json:"u"`
 	D      int64 `json:"d"`
 }
