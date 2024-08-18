@@ -67,12 +67,39 @@ func getUserList(url string, etag string) ([]User, string, error) {
 }
 
 func UpdateUsers(url string, interval time.Duration, trafficlogger server.TrafficLogger) {
-
 	fmt.Println("用户列表自动更新服务已激活")
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	var etag string
+
+	// 立即执行一次 getUserList
+	userList, newEtag, err := getUserList(url, etag)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return // 直接返回，不进入循环
+	}
+
+	// 处理首次获取的用户列表
+	if newEtag != "" && newEtag != etag {
+		etag = newEtag
+
+		lock.Lock()
+		newUsersMap := make(map[string]User)
+		for _, user := range userList {
+			newUsersMap[user.UUID] = user
+		}
+		if trafficlogger != nil {
+			for uuid := range usersMap {
+				if _, exists := newUsersMap[uuid]; !exists {
+					trafficlogger.LogOnlineState(strconv.Itoa(usersMap[uuid].ID), false)
+				}
+			}
+		}
+
+		usersMap = newUsersMap
+		lock.Unlock()
+	}
 
 	for range ticker.C {
 		userList, newEtag, err := getUserList(url, etag)
@@ -81,7 +108,6 @@ func UpdateUsers(url string, interval time.Duration, trafficlogger server.Traffi
 			continue
 		}
 
-		// 只有在服务器返回的新ETag与当前ETag不同时才更新用户列表
 		if newEtag != "" && newEtag != etag {
 			etag = newEtag
 
@@ -102,7 +128,6 @@ func UpdateUsers(url string, interval time.Duration, trafficlogger server.Traffi
 			lock.Unlock()
 		}
 	}
-
 }
 
 // 验证代码

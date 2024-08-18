@@ -791,7 +791,7 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 		}
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
 	} else {
-		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*5, nil)
+		go auth.UpdateUsers(fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria2&act=user", c.V2RaySocks.ApiHost, c.V2RaySocks.ApiKey, c.V2RaySocks.NodeID), time.Second*60, nil)
 	}
 	return nil
 }
