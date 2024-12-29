@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -126,6 +128,68 @@ func UpdateUsers(url string, interval time.Duration, trafficlogger server.Traffi
 
 			usersMap = newUsersMap
 			lock.Unlock()
+		}
+	}
+}
+
+func getResponseEtag(url string, etag string) (string, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified {
+		return etag, nil // Return the existing etag if no changes
+	}
+
+	newEtag := resp.Header.Get("ETag")
+	return newEtag, nil
+}
+
+func CheckPanelConf(url string, interval time.Duration) {
+	fmt.Println("远程配置文件监控服务已激活")
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	var etag string
+
+	for range ticker.C {
+		newEtag, err := getResponseEtag(url, etag)
+		if err != nil {
+			fmt.Println("Error:", err)
+			continue
+		}
+
+		fmt.Println(etag)
+
+		// 如果etag不同，则进行相应的操作
+		if newEtag != "" && newEtag != etag {
+			fmt.Println("远程配置文件已更改，程序即将重启...")
+			// 创建一个重新启动的命令
+			cmd := exec.Command(os.Args[0], os.Args[1:]...) // os.Args[0] 是当前程序的路径，os.Args[1:] 是传递给程序的参数
+
+			// 启动新进程
+			err := cmd.Start()
+			if err != nil {
+				fmt.Println("启动新进程失败:", err)
+				return
+			}
+
+			// 退出当前程序
+			os.Exit(0)
+		} else {
+			// 更新etag值
+			etag = newEtag
 		}
 	}
 }
