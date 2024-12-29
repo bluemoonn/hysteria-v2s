@@ -156,7 +156,7 @@ func getResponseEtag(url string, etag string) (string, error) {
 	return newEtag, nil
 }
 
-func CheckPanelConf(url string, interval time.Duration) {
+func CheckRemoteConf(url string, interval time.Duration) {
 	fmt.Println("远程配置文件监控服务已激活")
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
