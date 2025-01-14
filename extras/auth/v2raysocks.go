@@ -169,11 +169,8 @@ func CheckRemoteConf(url string, interval time.Duration) {
 			fmt.Println("Error:", err)
 			continue
 		}
-
-		fmt.Println(etag)
-
 		// 如果etag不同，则进行相应的操作
-		if newEtag != "" && newEtag != etag {
+		if etag != "" && newEtag != etag {
 			fmt.Println("远程配置文件已更改，程序即将重启...")
 			// 创建一个重新启动的命令
 			cmd := exec.Command(os.Args[0], os.Args[1:]...) // os.Args[0] 是当前程序的路径，os.Args[1:] 是传递给程序的参数
