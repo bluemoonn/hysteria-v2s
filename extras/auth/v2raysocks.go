@@ -36,7 +36,7 @@ type User struct {
 }
 
 type ResponseData struct {
-	Users []User `json:"users"`
+	Users []User `json:"data"`
 }
 
 func getUserList(url string, etag string) ([]User, string, error) {
