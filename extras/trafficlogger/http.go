@@ -147,8 +147,16 @@ func (s *trafficStatsServerImpl) PushSystemStatus(url string) error {
 		return err
 	}
 
-	// 发起 HTTP 请求并提交数据
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	// 构建 HTTP 请求并添加 UA
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Hysteria/2.5.1")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -207,10 +215,17 @@ func (s *trafficStatsServerImpl) PushTrafficToV2RaySocks(url string) error {
 		return err
 	}
 
-	// 发起 HTTP 请求并提交数据
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		fmt.Println(resp)
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Hysteria/2.5.1")
+
+	// 发起请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()

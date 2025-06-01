@@ -48,6 +48,8 @@ func getUserList(url string, etag string) ([]User, string, error) {
 		req.Header.Set("If-None-Match", etag)
 	}
 
+	req.Header.Set("User-Agent", "Hysteria/2.5.1")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -141,6 +143,8 @@ func getResponseEtag(url string, etag string) (string, error) {
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
+
+	req.Header.Set("User-Agent", "Hysteria/2.5.1")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

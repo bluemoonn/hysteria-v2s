@@ -956,8 +956,11 @@ func runServer(cmd *cobra.Command, args []string) {
 		// 创建完整的URL，包括查询参数
 		nodeInfoUrl := config.V2RaySocks.ApiHost + "?" + queryParams.Encode()
 
-		// 发起 HTTP GET 请求
-		resp, err := http.Get(nodeInfoUrl)
+		// 添加 User-Agent
+		req, _ := http.NewRequest("GET", nodeInfoUrl, nil)
+		req.Header.Set("User-Agent", "Hysteria/2.5.1")
+
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			// 处理错误
 			fmt.Println("HTTP GET 请求节点配置出错:", err)
